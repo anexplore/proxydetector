@@ -33,7 +33,7 @@ public class HttpProxyDetector {
     
     private volatile boolean stop;
     
-    private int[] COMMON_PORT = new int[] {818, 9000, 8123, 8998, 8118};
+    private int[] COMMON_PORT = new int[] {8098, 808, 818, 9000, 8123, 8998, 8118};
     
     public HttpProxyDetector(String ip, int maxConcurrentCount) throws UnknownHostException {
         this.startIp = InetAddress.getByName(ip).getAddress();

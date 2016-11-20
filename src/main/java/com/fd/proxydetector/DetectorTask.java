@@ -109,8 +109,7 @@ public class DetectorTask implements TimerTaskInterface {
         if (data.length > 50) {
             HttpResponse response = SimpleHttpDecoder.decode(data);
             if (response.body != null && response.body.length == 43) {
-                System.err.println(new String(data));
-                System.err.println(response.body.length);
+                System.err.println(address.toString());
             }
         }
         releaseSem();
