@@ -1,4 +1,4 @@
 # proxydetector
-HTTP代理检测
+HTTP PROXY 检测
 
 JUST FOR FUN
