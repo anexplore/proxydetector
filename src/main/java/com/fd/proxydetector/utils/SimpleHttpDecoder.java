@@ -35,7 +35,8 @@ public class SimpleHttpDecoder {
         int lineEnd = lineStart;
         int lineCount = 0;
         for (int i = 0; i < content.length; i++) {
-            if (content[i] == SPLITOR_CR && content[i + 1] == SPLITOR_LF) {
+            if (content[i] == SPLITOR_CR && (i + 1) < content.length 
+                && content[i + 1] == SPLITOR_LF) {
                 lineEnd = i - 1;
                 if (lineCount > 0 && lineStart == i) {
                     parseBody(response, content, i + 2);
