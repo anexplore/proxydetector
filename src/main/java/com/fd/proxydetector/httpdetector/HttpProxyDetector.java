@@ -43,13 +43,13 @@ public class HttpProxyDetector {
     public void init() throws IOException {
         this.sem = new Semaphore(maxConcurrentCount);
         this.timerChecker = new SequenceTimerChecker();
-        this.executor = new ThreadPoolExecutor(CORE_SIZE, CORE_SIZE, 60, TimeUnit.SECONDS,
+        this.executor = new ThreadPoolExecutor(CORE_SIZE + 1, CORE_SIZE + 1, 60, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<Runnable>(2));
         bossWorker = new DetectorBossWorker();
         subWorkers = new DetectorSubWorker[CORE_SIZE - 1 > 0 ? CORE_SIZE - 1 : 1];
         executor.submit(bossWorker);
         for (int i = 0; i < subWorkers.length; i++) {
-            DetectorSubWorker sub = new DetectorSubWorker();
+            DetectorSubWorker sub = new DetectorSubWorker(maxConcurrentCount);
             bossWorker.registerSubWorker(sub);
             executor.submit(sub);
             subWorkers[i] = sub;
@@ -100,8 +100,8 @@ public class HttpProxyDetector {
                         new InetSocketAddress(InetAddress.getByAddress(startIp), COMMON_PORT[i]),
                         ByteBuffer.wrap(Constants.DETECT_HTTP_REQUEST_BYTE),
                         sem, 10000); 
-                timerChecker.addTask(task);
                 bossWorker.registerTask(task);
+                timerChecker.addTask(task);
                 if (count % 1000 == 0) {
                     System.out.println(count);
                 }

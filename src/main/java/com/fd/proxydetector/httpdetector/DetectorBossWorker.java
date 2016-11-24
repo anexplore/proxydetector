@@ -9,8 +9,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import com.fd.proxydetector.DetectorTask;
+import com.fd.proxydetector.utils.TimeUtils;
 
 public class DetectorBossWorker extends AbstractDetectorWorker {
     
@@ -18,7 +20,7 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
     private final ArrayList<DetectorSubWorker> subWorkers;
     private final CountDownLatch stopLatch;
     private final LinkedList<DetectorTask> tasks;
-    private final LinkedList<DetectorTask> cancelledTasks;
+    private final LinkedList<SelectionKey> cancelledKeys;
     private int roundIndex;
     private volatile boolean stopWorker;
     
@@ -27,7 +29,7 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
         subWorkers = new ArrayList<>(Runtime.getRuntime().availableProcessors());
         stopLatch = new CountDownLatch(1);
         tasks = new LinkedList<>();
-        cancelledTasks = new LinkedList<>();
+        cancelledKeys = new LinkedList<>();
     }
     
     public void registerTask(DetectorTask task) {
@@ -39,19 +41,32 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
     
     @Override
     public void cancelDetectorTask(DetectorTask task) {
-        synchronized(cancelledTasks) {
-            cancelledTasks.add(task);
+        synchronized(cancelledKeys) {
+            if (task.attachedSelectionKey() != null) {
+                cancelledKeys.add(task.attachedSelectionKey());
+            }
         }
     }
     
     private void processAddTasks() {
         synchronized(tasks) {
             for (DetectorTask task : tasks) {
+                if (task.isDone()) {
+                    continue;
+                }
                 SocketChannel channel = null;
+                while (true) { 
+                    try {
+                        channel = createChannel(task);
+                        break;
+                    } catch (IOException e) {
+                        TimeUtils.wait(2, TimeUnit.SECONDS);
+                    }
+                }
                 try {
-                    channel = createChannel(task);
                     connect(channel, task);
                 } catch (IOException e) {
+                    e.printStackTrace();
                     closeChannel(channel);
                     task.fail();
                 }
@@ -64,14 +79,11 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
     }
     
     private void processCancelledTasks() {
-        synchronized(cancelledTasks) {
-            for (DetectorTask task : cancelledTasks) {
-                SelectionKey skey = task.attachedSelectionKey();
-                if (skey != null) {
-                    releaseResource(skey, skey.channel());
-                }
+        synchronized(cancelledKeys) {
+            for (SelectionKey skey : cancelledKeys) {
+                releaseResource(skey, skey.channel());
             }
-            cancelledTasks.clear();
+            cancelledKeys.clear();
         }
     }
     
@@ -98,6 +110,7 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
         task.attachDetectorWorker(this);
         try {
             if (channel.connect(task.address)) {
+                key.cancel();
                 registerToSubWorker(channel, task);
             }
         } catch (IOException e) {
@@ -112,7 +125,11 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
                 roundIndex = 0;
             }
             if (subWorkers.size() > 0) {
-                subWorkers.get(roundIndex).register(channel, task);
+                task.attachDetectorWorker(null);
+                task.attachSelectionKey(null);
+                if (!subWorkers.get(roundIndex).register(channel, task)) {
+                    task.fail();
+                }
             }
         }
     }
@@ -134,8 +151,8 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
     @Override
     public void run() {
         while (!stopWorker) {
-            processAddTasks();
             processCancelledTasks();
+            processAddTasks();
             try {
                 if (selector.select(500) > 0) {
                     Iterator<SelectionKey> iter = selector.selectedKeys().iterator();
@@ -158,6 +175,7 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
                     }
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 stopWorker = true;
             }
         }

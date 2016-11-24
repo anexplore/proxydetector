@@ -27,7 +27,7 @@ public class DetectorTask implements TimerTaskInterface {
     private final AtomicReference<SelectionKey> skeyRef;
     private final AtomicReference<AbstractDetectorWorker> workerRef;
     private final long timeoutTimestamp;
-    private volatile Boolean released;
+    private Boolean released;
     
     public DetectorTask(SocketAddress address, ByteBuffer requestBuffer,
             Semaphore sem, long timeout) {
@@ -76,7 +76,7 @@ public class DetectorTask implements TimerTaskInterface {
         if (workerRef.get() != null) {
             workerRef.get().cancelDetectorTask(this);
         }
-        releaseSem();
+        releaseSource();
     }
 
     public void cancel() {
@@ -85,7 +85,7 @@ public class DetectorTask implements TimerTaskInterface {
         if (workerRef.get() != null) {
             workerRef.get().cancelDetectorTask(this);
         }
-        releaseSem();
+        releaseSource();
     }
     
     @Override
@@ -95,7 +95,7 @@ public class DetectorTask implements TimerTaskInterface {
     
     public void fail() {
         isDone.getAndSet(true);
-        releaseSem();
+        releaseSource();
     }
     
     public boolean isSuccess() {
@@ -113,10 +113,12 @@ public class DetectorTask implements TimerTaskInterface {
                 System.err.flush();
             }
         }
-        releaseSem();
+        releaseSource();
     }
     
-    private void releaseSem() {
+    private void releaseSource() {
+        skeyRef.getAndSet(null);
+        workerRef.getAndSet(null);
         synchronized(released) {
             if (!released) {
                 sem.release();

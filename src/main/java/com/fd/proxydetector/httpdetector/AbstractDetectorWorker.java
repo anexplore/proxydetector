@@ -20,6 +20,9 @@ public abstract class AbstractDetectorWorker implements Runnable {
     public abstract void cancelDetectorTask(DetectorTask task);
     
     public void closeChannel(SocketChannel channel) {
+        if (channel == null) {
+            return;
+        }
         try {
             channel.socket().shutdownOutput();
         } catch (IOException e) {
@@ -33,6 +36,9 @@ public abstract class AbstractDetectorWorker implements Runnable {
     }
     
     public void closeSelector(Selector selector) {
+        if (selector == null) {
+            return;
+        }
         for (SelectionKey key : selector.keys()) {
             SocketChannel channel = (SocketChannel)key.channel();
             key.cancel();
@@ -43,8 +49,11 @@ public abstract class AbstractDetectorWorker implements Runnable {
     }
     
     public void releaseResource(SelectionKey key, SelectableChannel channel) {
-        if (key != null && key.isValid()) {
+        if (key != null) {
             key.cancel();
+        }
+        if (channel == null) {
+            return;
         }
         if (channel instanceof SocketChannel) {
             closeChannel((SocketChannel)channel); 

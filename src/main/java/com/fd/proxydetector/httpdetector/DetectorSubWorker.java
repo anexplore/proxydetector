@@ -9,6 +9,8 @@ import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import com.fd.proxydetector.DetectorTask;
 
@@ -16,15 +18,19 @@ public class DetectorSubWorker extends AbstractDetectorWorker {
     
     private final Selector selector;
     private final CountDownLatch stopLatch;
-    private final LinkedList<ChannelTaskPair> tasks;
-    private final LinkedList<DetectorTask> cancelledTasks;
+    private final LinkedBlockingQueue<ChannelTaskPair> tasks;
+    private final LinkedList<SelectionKey> cancelledKeys;
     private volatile boolean stopWorker;
     
     public DetectorSubWorker() throws IOException {
+        this(1000);
+    }
+
+    public DetectorSubWorker(int maxWaitSize) throws IOException {
         selector = Selector.open();
         stopLatch = new CountDownLatch(1);
-        tasks = new LinkedList<>();
-        cancelledTasks = new LinkedList<>();
+        tasks = new LinkedBlockingQueue<>(maxWaitSize);
+        cancelledKeys = new LinkedList<>();
     }
     
     public void shutdown() {
@@ -47,50 +53,62 @@ public class DetectorSubWorker extends AbstractDetectorWorker {
     
     @Override
     public void cancelDetectorTask(DetectorTask task) {
-        synchronized(cancelledTasks) {
-            cancelledTasks.add(task);
+        synchronized(cancelledKeys) {
+            if (task.attachedSelectionKey() != null) {
+                cancelledKeys.add(task.attachedSelectionKey());
+            }
         }
     }
     
     private void processCancelledTasks() {
-        synchronized(cancelledTasks) {
-            for (DetectorTask task : cancelledTasks) {
-                SelectionKey skey = task.attachedSelectionKey();
-                if (skey != null) {
-                    closeChannel((SocketChannel)skey.channel());
-                    skey.cancel();
-                }
+        synchronized(cancelledKeys) {
+            for (SelectionKey skey : cancelledKeys) {
+                releaseResource(skey, skey.channel());
             }
-            cancelledTasks.clear();
+            cancelledKeys.clear();
         }
     }
     
-    public void register(SocketChannel channel, DetectorTask task) {
+    public boolean register(SocketChannel channel, DetectorTask task) {
         if (channel == null || !channel.isOpen()) {
             System.err.println("channel is not open yet");
-            return;
+            return false;
         }
-        synchronized(tasks) {
-            tasks.add(new ChannelTaskPair(channel, task));
+        if (stopWorker) {
+            return false;
         }
+        ChannelTaskPair pair = new ChannelTaskPair(channel, task);
+        try {
+            while(!task.isDone() && !tasks.offer(pair, 500, TimeUnit.MILLISECONDS));
+        } catch (InterruptedException e) {
+            task.fail();
+        }
+        return true;
     }
 
     private void processAddTasks() {
-        synchronized(tasks) {
-            for (ChannelTaskPair pair : tasks) {
-                SelectionKey key;
-                try {
-                    key = pair.channel.register(selector,
-                            SelectionKey.OP_READ | SelectionKey.OP_WRITE);
-                    key.attach(pair.task);
-                } catch (ClosedChannelException e) {
-                    pair.task.fail();
-                }
+        int i = 0;
+        for (; i < tasks.size(); i++) {
+            ChannelTaskPair pair = tasks.poll();
+            if (pair == null) {
+                break;
             }
-            if (tasks.size() > 0) {
-                selector.wakeup();
+            if (pair.task.isDone()) {
+                continue;
             }
-            tasks.clear();
+            SelectionKey key;
+            try {
+                key = pair.channel.register(selector,
+                        SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+                key.attach(pair.task);
+                pair.task.attachDetectorWorker(this);
+                pair.task.attachSelectionKey(key);
+            } catch (ClosedChannelException e) {
+                pair.task.fail();
+            }
+        }
+        if (i > 0) {
+            selector.wakeup();
         }
     }
     
@@ -107,9 +125,9 @@ public class DetectorSubWorker extends AbstractDetectorWorker {
     @Override
     public void run() {
         while(!stopWorker) {
-            processAddTasks();
-            processCancelledTasks();
             try {
+                processCancelledTasks();
+                processAddTasks();
                 if (selector.select(500) > 0) {
                     Iterator<SelectionKey> iter = selector.selectedKeys().iterator();
                     while (iter.hasNext()) {
@@ -152,8 +170,10 @@ public class DetectorSubWorker extends AbstractDetectorWorker {
                     }
                 }
             } catch (IOException e) {
+                e.printStackTrace();
                 stopWorker = true;
             } catch (Exception e) {
+                e.printStackTrace();
                 stopWorker = true;
             }
         }
