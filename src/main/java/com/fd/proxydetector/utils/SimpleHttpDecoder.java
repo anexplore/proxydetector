@@ -12,6 +12,9 @@ public class SimpleHttpDecoder {
     
     private static void parseResponseLine(HttpResponse response, byte[] buffer,
             int start, int end) {
+        if (start > end || start < 0) {
+            return;
+        }
         String responseLine = new String(buffer, start, end);
         Matcher matcher = RESPONSE_LINE_PATTERN.matcher(responseLine);
         if (matcher.find()) {
