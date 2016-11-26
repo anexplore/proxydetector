@@ -98,6 +98,7 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
     private SocketChannel createChannel(DetectorTask task) throws IOException {
         SocketChannel channel = SocketChannel.open();
         channel.configureBlocking(false);
+        channel.setOption(StandardSocketOptions.SO_REUSEADDR, true);
         channel.setOption(StandardSocketOptions.TCP_NODELAY, true);
         return channel;
     }
