@@ -73,8 +73,9 @@ public class DetectorTask implements TimerTaskInterface {
     @Override
     public void trigerTimeout() {
         isDone.getAndSet(true);
-        if (workerRef.get() != null) {
-            workerRef.get().cancelDetectorTask(this);
+        AbstractDetectorWorker worker = workerRef.get();
+        if (worker != null) {
+            worker.cancelDetectorTask(this);
         }
         releaseSource();
     }
@@ -82,8 +83,9 @@ public class DetectorTask implements TimerTaskInterface {
     public void cancel() {
         isDone.getAndSet(true);
         cancelled.getAndSet(true);
-        if (workerRef.get() != null) {
-            workerRef.get().cancelDetectorTask(this);
+        AbstractDetectorWorker worker = workerRef.get();
+        if (worker != null) {
+            worker.cancelDetectorTask(this);
         }
         releaseSource();
     }
