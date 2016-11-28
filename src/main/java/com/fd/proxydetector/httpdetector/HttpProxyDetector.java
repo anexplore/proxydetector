@@ -120,12 +120,16 @@ public class HttpProxyDetector {
             }
         }
         int top = (startIp[0] & 0xFF); 
-        if ( top == 172 || top == 192) {
+        if (top == 172 || top == 192) {
             startIp[0]++;
         }
     }
     
     public static void main(String args[]) throws IOException {
+        if (args.length < 2) {
+            System.out.println("Wrong Param\nParams:start_ip max_concurrent\n");
+            System.exit(1);
+        }
         HttpProxyDetector detector = new HttpProxyDetector(args[0],
                 Integer.parseInt(args[1]));
         detector.init();
