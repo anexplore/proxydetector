@@ -1,4 +1,4 @@
-package com.fd.proxydetector.utils;
+package com.fd.proxydetector.http;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

@@ -9,9 +9,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.io.output.ByteArrayOutputStream;
 
+import com.fd.proxydetector.http.HttpResponse;
+import com.fd.proxydetector.http.SimpleHttpDecoder;
 import com.fd.proxydetector.httpdetector.AbstractDetectorWorker;
-import com.fd.proxydetector.utils.HttpResponse;
-import com.fd.proxydetector.utils.SimpleHttpDecoder;
 import com.fd.proxydetector.utils.TimeUtils;
 import com.fd.proxydetector.utils.TimerTaskInterface;
 
@@ -73,54 +73,72 @@ public class DetectorTask implements TimerTaskInterface {
     @Override
     public void trigerTimeout() {
         isDone.getAndSet(true);
-        AbstractDetectorWorker worker = workerRef.get();
-        if (worker != null) {
-            worker.cancelDetectorTask(this);
-        }
+        onTimeout();
         releaseSource();
     }
 
-    public void cancel() {
-        isDone.getAndSet(true);
-        cancelled.getAndSet(true);
-        AbstractDetectorWorker worker = workerRef.get();
-        if (worker != null) {
-            worker.cancelDetectorTask(this);
-        }
-        releaseSource();
-    }
-    
     @Override
     public boolean isDone() {
         return isDone.get();
     }
     
-    public void fail() {
+    public void cancel() {
         isDone.getAndSet(true);
+        cancelled.getAndSet(true);
+        onCancelled();
         releaseSource();
     }
     
+    public void fail() {
+        isDone.getAndSet(true);
+        onFail();
+        releaseSource();
+    }
+ 
+    public void success() {
+        isDone.getAndSet(true);
+        success.getAndSet(true);
+        onSuccess();
+        releaseSource();
+    }
+
     public boolean isSuccess() {
         return success.get();
     }
     
-    public void success() {
-        isDone.getAndSet(true);
-        success.getAndSet(true);
+    private void onFail() {
+        //do nothing now
+    }
+    
+    //executed by sub worker thread
+    //do not do too much computation
+    private void onSuccess() {
         byte[] data = stream.toByteArray();
-        if (data.length > 50) {
+        if (data.length > Constants.HTTP_PROXY_EXPECTED_RESPONSE_BODY_SIZE) {
             HttpResponse response = SimpleHttpDecoder.decode(data);
-            if (response.body != null && response.body.length == 43) {
+            if (response.body != null 
+                    && response.body.length == Constants.HTTP_PROXY_EXPECTED_RESPONSE_BODY_SIZE) {
                 System.err.println(address.toString());
                 System.err.flush();
             }
         }
-        releaseSource();
+    }
+    
+    private void onTimeout() {
+        onCancelled();
+    }
+    
+    private void onCancelled() {
+        AbstractDetectorWorker worker = workerRef.get();
+        if (worker != null) {
+            worker.cancelDetectorTask(this);
+        }
     }
     
     private void releaseSource() {
         skeyRef.getAndSet(null);
         workerRef.getAndSet(null);
+        // only release once
         synchronized(released) {
             if (!released) {
                 sem.release();

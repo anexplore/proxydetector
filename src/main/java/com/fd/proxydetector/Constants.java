@@ -1,4 +1,4 @@
-package com.fd.proxydetector.httpdetector;
+package com.fd.proxydetector;
 
 import java.io.UnsupportedEncodingException;
 
@@ -8,7 +8,7 @@ public class Constants {
             + "Host:hm.baidu.com\r\n"
             + "Connection:close\r\n"
             + "\r\n";
-    
+    public static int HTTP_PROXY_EXPECTED_RESPONSE_BODY_SIZE = 43;
     public static byte[] DETECT_HTTP_REQUEST_BYTE;
     static {
         try {

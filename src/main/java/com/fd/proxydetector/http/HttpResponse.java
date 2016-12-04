@@ -1,4 +1,4 @@
-package com.fd.proxydetector.utils;
+package com.fd.proxydetector.http;
 
 public class HttpResponse {
     public byte[] body;

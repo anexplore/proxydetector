@@ -42,8 +42,7 @@ public abstract class AbstractDetectorWorker implements Runnable {
         for (SelectionKey key : selector.keys()) {
             SocketChannel channel = (SocketChannel)key.channel();
             key.cancel();
-            IOUtils.closeQuietly(channel.socket());
-            IOUtils.closeQuietly(channel);
+            closeChannel(channel);
         }
         IOUtils.closeQuietly(selector);
     }

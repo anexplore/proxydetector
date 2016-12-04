@@ -10,6 +10,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import com.fd.proxydetector.Constants;
 import com.fd.proxydetector.DetectorTask;
 import com.fd.proxydetector.utils.SequenceTimerChecker;
 
@@ -33,7 +34,7 @@ public class HttpProxyDetector {
     
     private volatile boolean stop;
     
-    private int[] COMMON_PORT = new int[] {808, 3128, 818, 9000, 8123, 8998, 8118};
+    private int[] COMMON_PORT = new int[] {8080, 808, 3128, 818, 9000, 8123, 8998, 8118};
     
     public HttpProxyDetector(String ip, int maxConcurrentCount) throws UnknownHostException {
         this.startIp = InetAddress.getByName(ip).getAddress();

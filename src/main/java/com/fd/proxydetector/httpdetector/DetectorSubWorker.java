@@ -170,10 +170,8 @@ public class DetectorSubWorker extends AbstractDetectorWorker {
                     }
                 }
             } catch (IOException e) {
-                e.printStackTrace();
                 stopWorker = true;
             } catch (Exception e) {
-                e.printStackTrace();
                 stopWorker = true;
             }
         }

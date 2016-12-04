@@ -66,7 +66,6 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
                 try {
                     connect(channel, task);
                 } catch (IOException e) {
-                    e.printStackTrace();
                     closeChannel(channel);
                     task.fail();
                 }
@@ -176,7 +175,6 @@ public class DetectorBossWorker extends AbstractDetectorWorker {
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
                 stopWorker = true;
             }
         }

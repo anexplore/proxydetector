@@ -4,12 +4,13 @@ HTTP PROXY 检测
 JUST FOR FUN
 
 TO DO LIST:
+- [ ] 添加日志
 - [ ] 代理活性检测
-- [ ] 代理等级检测(透明、高匿等)
+- [ ] 代理等级检测(透明、高匿等) progess(50%)
 - [ ] 代理速度检测(不具有代表性)
-- [ ] 代理地域抽取
+- [ ] 代理地域抽取 progess(70%)
 - [ ] 代理能否跨过GFW
-- [ ] 代理IP段分析
+- [ ] 代理IP段分析\代理可用时段分析
 - [ ] HTTPS代理检测
 
 SYN_SENT RETRY ON LINUX:
