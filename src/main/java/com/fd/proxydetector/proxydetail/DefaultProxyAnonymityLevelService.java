@@ -4,8 +4,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
+import org.asynchttpclient.AsyncCompletionHandler;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.ListenableFuture;
+import org.asynchttpclient.Request;
+import org.asynchttpclient.RequestBuilder;
 import org.asynchttpclient.Response;
 import org.asynchttpclient.proxy.ProxyServer;
 
@@ -57,6 +60,25 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
         return "";
     } 
 
+    private ProxyAnonymityLevel processResponseBody(String body) {
+        String remoteAddr = getRemoteAddrHeader(body);
+        String httpVia = getHttpViaHeader(body);
+        String forwardedFor = getHttpXForwardedForHeader(body);
+        // 如果没有REMOTEADDR则认为代理有问题
+        if (remoteAddr.isEmpty()) {
+            return ProxyAnonymityLevel.UNKNOWN;
+        }
+        if (!httpVia.isEmpty()) {
+           if (forwardedFor.equals(localIp)) {
+               // 对于没有固定IP的扫描机器 此判断是有问题的
+               return ProxyAnonymityLevel.TRANSPARENT;
+           } else {
+               return ProxyAnonymityLevel.ANONYMOUS;
+           }
+        }
+        return ProxyAnonymityLevel.ELITE;
+    }
+    
     @Override
     public ProxyAnonymityLevel resolve(Proxy proxy) {
         if (proxy == null || StringUtils.isBlank(proxy.host) || proxy.port <= 0) {
@@ -73,25 +95,43 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
             if (StringUtils.isEmpty(body)) {
                 return ProxyAnonymityLevel.UNKNOWN;
             }
-            String remoteAddr = getRemoteAddrHeader(body);
-            String httpVia = getHttpViaHeader(body);
-            String forwardedFor = getHttpXForwardedForHeader(body);
-            // 如果没有REMOTEADDR则认为代理有问题
-            if (remoteAddr.isEmpty()) {
-                return ProxyAnonymityLevel.UNKNOWN;
-            }
-            if (!httpVia.isEmpty()) {
-               if (forwardedFor.equals(localIp)) {
-                   // 对于没有固定IP的扫描机器 此判断是有问题的
-                   return ProxyAnonymityLevel.TRANSPARENT;
-               } else {
-                   return ProxyAnonymityLevel.ANONYMOUS;
-               }
-            }
-            return ProxyAnonymityLevel.ELITE;
+            return processResponseBody(body);
         } catch (Exception e) {
         }
         return ProxyAnonymityLevel.UNKNOWN;
+    }
+
+    @Override
+    public void resolve(Proxy proxy, final AsyncTaskCompleteHandler<ProxyAnonymityLevel> handler) {
+        if (handler == null) {
+            return;
+        }
+        if (proxy == null || StringUtils.isBlank(proxy.host)) {
+            handler.complete(null);
+        }
+        Request request = new RequestBuilder()
+                .setUrl(PROXY_JUDGE_URL)
+                .build();
+        httpClient.executeRequest(request, new AsyncCompletionHandler<Response>() {
+
+            @Override
+            public Response onCompleted(Response response) throws Exception {
+                if (response == null) {
+                    handler.complete(null);
+                }
+                String body = response.getResponseBody();
+                if (StringUtils.isBlank(body)) {
+                    handler.complete(null);
+                }
+                handler.complete(processResponseBody(body));
+                return response;
+            }
+            
+            @Override
+            public void onThrowable(Throwable t){
+                handler.complete(null);
+            }
+        });
     }
 
 }

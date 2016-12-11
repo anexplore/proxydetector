@@ -11,4 +11,11 @@ public interface ProxyAnonymityLevelService {
      * @return ProxyAnonymityLevel 代理等级
      */
     public ProxyAnonymityLevel resolve(Proxy proxy);
+    
+    /**
+     * 测试代理匿名等级
+     * @param proxy
+     * @param handler
+     */
+    public void resolve(Proxy proxy, AsyncTaskCompleteHandler<ProxyAnonymityLevel> handler);
 }

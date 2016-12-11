@@ -11,4 +11,11 @@ public interface ProxyLocationService {
      * @return ProxyLocation or null if fail
      */
     ProxyLocation lookup(Proxy proxy);
+    
+    /**
+     * 查找Proxy地址位置信息 结果由handler处理
+     * @param proxy
+     * @param handler
+     */
+    void lookup(Proxy proxy, AsyncTaskCompleteHandler<ProxyLocation> handler);
 }

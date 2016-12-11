@@ -1,9 +1,13 @@
 package com.fd.proxydetector.proxydetail;
 
 import org.apache.commons.lang3.StringUtils;
+import org.asynchttpclient.AsyncCompletionHandler;
 import org.asynchttpclient.AsyncHttpClient;
 import org.asynchttpclient.ListenableFuture;
+import org.asynchttpclient.Request;
+import org.asynchttpclient.RequestBuilder;
 import org.asynchttpclient.Response;
+import org.asynchttpclient.uri.Uri;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -22,6 +26,31 @@ public class TaobaoIpLocationService implements ProxyLocationService {
         httpClient = httpClientFactory.getHttpClient();
     }
     
+    private ProxyLocation processResponseBody(String body) {
+        JSONObject jsonObj = JSON.parseObject(body);
+        if (jsonObj.getIntValue("code") != 0) {
+            return null;
+        }
+        JSONObject data = jsonObj.getJSONObject("data");
+        if (data == null) {
+            return null;
+        }
+        ProxyLocation location = new ProxyLocation();
+        location.setCountry(data.getString("country"));
+        location.setCountryId(data.getString("country_id"));
+        location.setArea(data.getString("area"));
+        location.setAreaId(data.getString("area_id"));
+        location.setRegion(data.getString("region"));
+        location.setRegionId(data.getString("region_id"));
+        location.setCity(data.getString("city"));
+        location.setCityId(data.getString("city_id"));
+        location.setCounty(data.getString("county"));
+        location.setCountyId(data.getString("county_id"));
+        location.setIsp(data.getString("isp"));
+        location.setIspId(data.getString("isp_id"));
+        return location;
+    }
+    
     @Override
     public ProxyLocation lookup(Proxy proxy) {
         if (proxy == null || StringUtils.isBlank(proxy.host)) {
@@ -35,31 +64,41 @@ public class TaobaoIpLocationService implements ProxyLocationService {
             if (StringUtils.isEmpty(body)) {
                 return null;
             }
-            JSONObject jsonObj = JSON.parseObject(body);
-            if (jsonObj.getIntValue("code") != 0) {
-                return null;
-            }
-            JSONObject data = jsonObj.getJSONObject("data");
-            if (data == null) {
-                return null;
-            }
-            ProxyLocation location = new ProxyLocation();
-            location.setCountry(data.getString("country"));
-            location.setCountryId(data.getString("country_id"));
-            location.setArea(data.getString("area"));
-            location.setAreaId(data.getString("area_id"));
-            location.setRegion(data.getString("region"));
-            location.setRegionId(data.getString("region_id"));
-            location.setCity(data.getString("city"));
-            location.setCityId(data.getString("city_id"));
-            location.setCounty(data.getString("county"));
-            location.setCountyId(data.getString("county_id"));
-            location.setIsp(data.getString("isp"));
-            location.setIspId(data.getString("isp_id"));
-            return location;
+            return processResponseBody(body);
         } catch (Exception e) {
-            e.printStackTrace();
         }
         return null;
+    }
+
+    @Override
+    public void lookup(Proxy proxy, final AsyncTaskCompleteHandler<ProxyLocation> handler) {
+        if (handler == null) {
+            return;
+        }
+        if (proxy == null || StringUtils.isBlank(proxy.host)) {
+            handler.complete(null);
+            return;
+        }
+        Request request = new RequestBuilder()
+                .setUri(Uri.create(TAOBAO_IP_SERVICE_URL_PREFIX + proxy.host))
+                .build();
+        httpClient.executeRequest(request, new AsyncCompletionHandler<Response>() {
+
+            @Override
+            public Response onCompleted(Response response) throws Exception {
+                String body = response.getResponseBody();
+                if (StringUtils.isEmpty(body)) {
+                    handler.complete(null);
+                } else {
+                    handler.complete(processResponseBody(body));
+                }
+                return response;
+            }
+            
+            @Override
+            public void onThrowable(Throwable t){
+                handler.complete(null);
+            }
+        });
     }
 }
