@@ -1,5 +1,7 @@
 package com.fd.proxydetector;
 
+import com.alibaba.fastjson.annotation.JSONField;
+
 public class Proxy {
     
     public static final int HTTP = 1;
@@ -24,6 +26,7 @@ public class Proxy {
      * <p>country area region city county</p>
      * @return 详细地理位置信息
      */
+    @JSONField(serialize=false)
     public String getFullLocation() {
         return location == null ? "" : location.getFullLocation();
     }
@@ -31,6 +34,7 @@ public class Proxy {
     /**
      * @return 是否HTTP代理
      */
+    @JSONField(serialize=false)
     public boolean isHttpSupported() {
         return (proxyType & HTTP) == HTTP;
     }
@@ -38,6 +42,7 @@ public class Proxy {
     /**
      * @return 是否HTTPS代理
      */
+    @JSONField(serialize=false)
     public boolean isHttpsSupported() {
         return (proxyType & HTTPS) == HTTPS;
     }
@@ -45,6 +50,7 @@ public class Proxy {
     /**
      * @return 是否SOCKS代理
      */
+    @JSONField(serialize=false)
     public boolean isSocksSupported() {
         return (proxyType & SOCKS) == SOCKS;
     }
@@ -52,7 +58,14 @@ public class Proxy {
     /**
      * @return 是否SOCKS5代理
      */
+    @JSONField(serialize=false)
     public boolean isSocks5Supported() {
         return (proxyType & SOCKS5) == SOCKS5;
+    }
+
+    @Override
+    public String toString() {
+        return "Proxy [proxyType=" + proxyType + ", host=" + host + ", port=" + port + ", location="
+                + location + ", anonymity=" + anonymity + ", speed=" + speed + "]";
     }
 }

@@ -13,8 +13,8 @@ public class DefaultProxyAnonymityLevelServiceTest {
     @Test
     public void testLookup() {
         Proxy proxy = new Proxy();
-        proxy.host = "113.44.57.118";
-        proxy.port = 9000;
+        proxy.host = "104.194.71.175";
+        proxy.port = 8998;
         AbstractHttpClientFactory<AsyncHttpClient> factory = new DefaultHttpClientFactory();
         DefaultProxyAnonymityLevelService service = 
                 new DefaultProxyAnonymityLevelService(factory, "");

@@ -33,6 +33,7 @@ public class FileProxyStorageWriter implements Writer {
             openFile();
         }
         writer.write(JSON.toJSONString(proxy) + "\n");
+        writer.flush();
     }
 
     @Override

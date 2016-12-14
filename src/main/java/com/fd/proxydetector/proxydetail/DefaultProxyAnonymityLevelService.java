@@ -16,6 +16,8 @@ import com.fd.proxydetector.Proxy;
 import com.fd.proxydetector.ProxyAnonymityLevel;
 import com.fd.proxydetector.http.AbstractHttpClientFactory;
 
+import io.netty.handler.codec.http.HttpResponseStatus;
+
 public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelService {
 
     public static final String PROXY_JUDGE_URL = "http://proxyjudge.us";
@@ -34,6 +36,10 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
             String localIp) {
         httpClient = httpClientFactory.getHttpClient();
         this.localIp = localIp;
+    }
+    
+    private boolean containsSpecHost(String body) {
+        return body.contains("HTTP_HOST = proxyjudge.us");
     }
     
     private String getRemoteAddrHeader(String body) {
@@ -66,10 +72,10 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
         String forwardedFor = getHttpXForwardedForHeader(body);
         // 如果没有REMOTEADDR则认为代理有问题
         if (remoteAddr.isEmpty()) {
-            return ProxyAnonymityLevel.UNKNOWN;
+            return null;
         }
         if (!httpVia.isEmpty()) {
-           if (forwardedFor.equals(localIp)) {
+           if (forwardedFor.trim().equals(localIp)) {
                // 对于没有固定IP的扫描机器 此判断是有问题的
                return ProxyAnonymityLevel.TRANSPARENT;
            } else {
@@ -89,16 +95,20 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
                     .setProxyServer(new ProxyServer.Builder(proxy.host, proxy.port)).execute();
             Response response = responseFuture.get();
             if (response == null) {
-                return ProxyAnonymityLevel.UNKNOWN;
+                return null;
             }
             String body = response.getResponseBody();
             if (StringUtils.isEmpty(body)) {
-                return ProxyAnonymityLevel.UNKNOWN;
+                return null;
+            }
+            if (response.getStatusCode() != HttpResponseStatus.OK.code() 
+                    || !containsSpecHost(body)) {
+                return null;
             }
             return processResponseBody(body);
         } catch (Exception e) {
         }
-        return ProxyAnonymityLevel.UNKNOWN;
+        return null;
     }
 
     @Override
@@ -111,6 +121,7 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
         }
         Request request = new RequestBuilder()
                 .setUrl(PROXY_JUDGE_URL)
+                .setProxyServer(new ProxyServer.Builder(proxy.host, proxy.port))
                 .build();
         httpClient.executeRequest(request, new AsyncCompletionHandler<Response>() {
 
@@ -123,7 +134,12 @@ public class DefaultProxyAnonymityLevelService implements ProxyAnonymityLevelSer
                 if (StringUtils.isBlank(body)) {
                     handler.complete(null);
                 }
-                handler.complete(processResponseBody(body));
+                if (response.getStatusCode() != HttpResponseStatus.OK.code() 
+                        || !containsSpecHost(body)) {
+                    handler.complete(null);
+                } else {
+                    handler.complete(processResponseBody(body));
+                }
                 return response;
             }
             

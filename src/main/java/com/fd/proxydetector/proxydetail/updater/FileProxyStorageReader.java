@@ -14,7 +14,7 @@ public class FileProxyStorageReader implements RecycleReader {
     private boolean opened;
     private BufferedReader reader;
     
-    private FileProxyStorageReader(String filePath) {
+    public FileProxyStorageReader(String filePath) {
         this.filePath = filePath;
     }
     
