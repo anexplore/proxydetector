@@ -11,7 +11,7 @@
 * 如果HTTPS请求返回正确，则判定为支持HTTPS代理
 
 ###### 匿名度检测
-通过代理发送请求到自己的proxyjudge server上，通过http request headers判断代理你明度即可
+通过代理发送请求到自己的proxyjudge server上，通过http request headers判断代理匿明度即可
 
 ###### 注意
 * 扫描出的代理在不同网断可达性不同
