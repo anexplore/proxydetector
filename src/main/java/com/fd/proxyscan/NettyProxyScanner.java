@@ -66,12 +66,12 @@ public class NettyProxyScanner {
     private static final int EXPECTED_CONTENT_LENGTH = 43;
     private static final HttpRequest PROXY_HTTP_REQUEST = new DefaultHttpRequest(
             HttpVersion.HTTP_1_1, HttpMethod.GET, "http://hm.baidu.com/hm.gif");
-    private static final HttpRequest PROXY_HTTPS_CONNECT_REQUEST = new DefaultHttpRequest(
-            HttpVersion.HTTP_1_1, HttpMethod.CONNECT, "hm.baidu.com:443");
-    private static final HttpRequest PROXY_HTTPS_REQUEST = new DefaultHttpRequest(
-            HttpVersion.HTTP_1_1, HttpMethod.GET, "/hm.gif");
-    private static final AttributeKey<DetectProgress> DETECT_PROGRESS = AttributeKey
-            .valueOf("detectProgress");
+    private static final HttpRequest PROXY_HTTPS_CONNECT_REQUEST =
+            new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.CONNECT, "hm.baidu.com:443");
+    private static final HttpRequest PROXY_HTTPS_REQUEST =
+            new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/hm.gif");
+    private static final AttributeKey<DetectProgress> DETECT_PROGRESS =
+            AttributeKey.valueOf("detectProgress");
 
     private enum DetectProgress {
         HTTP, CONNECT, HTTPS
@@ -85,9 +85,9 @@ public class NettyProxyScanner {
     }
 
     public static void main(String[] args) throws Exception {
-        MultiPortDetectAddressProvider provider =
-                new MultiPortDetectAddressProvider(InetAddress.getByName(args[0]), Arrays
-                        .asList(args[1].split(",")).stream().mapToInt(Integer::parseInt).toArray());
+        MultiPortDetectAddressProvider provider = new MultiPortDetectAddressProvider(
+                InetAddress.getByName(args[0]),
+                Arrays.asList(args[1].split(",")).stream().mapToInt(Integer::parseInt).toArray());
         NettyProxyScanConfig config = new NettyProxyScanConfig();
         config.maxHttpDetectConc = Integer.parseInt(args[2]);
         NettyProxyScanner scanner = new NettyProxyScanner(config, provider);
@@ -104,12 +104,12 @@ public class NettyProxyScanner {
     }
 
     public NettyProxyScanner(NettyProxyScanConfig config, DetectAddressProvider provider) {
-    	this.httpsDetectQueue = new LinkedBlockingQueue<>();
-    	this.proxiesStoreQueue = new LinkedBlockingQueue<>();
-    	this.proxyStore = new StdoutProxyStore();
-    	this.config = config;
-    	this.provider = provider;
-    	httpConc = new Semaphore(config.maxHttpDetectConc);
+        this.httpsDetectQueue = new LinkedBlockingQueue<>();
+        this.proxiesStoreQueue = new LinkedBlockingQueue<>();
+        this.proxyStore = new StdoutProxyStore();
+        this.config = config;
+        this.provider = provider;
+        httpConc = new Semaphore(config.maxHttpDetectConc);
         httpsConc = new Semaphore(config.maxHttpsDetectConc);
     }
 
@@ -119,9 +119,8 @@ public class NettyProxyScanner {
         bootstrap.group(eventLoopGroup).channel(NioSocketChannel.class)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.connectTimeout)
                 .option(ChannelOption.TCP_NODELAY, true).handler(new PipelineIntializer());
-        this.sslCtx =
-                SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE)
-                        .build();
+        this.sslCtx = SslContextBuilder.forClient()
+                .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
         proxyStoreThread = new Thread() {
             public void run() {
                 storeProxiesLoop();
@@ -154,7 +153,7 @@ public class NettyProxyScanner {
         if (eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully();
         }
-        if (proxyStoreThread  != null) {
+        if (proxyStoreThread != null) {
             proxyStoreThread.join();
         }
     }
@@ -174,17 +173,17 @@ public class NettyProxyScanner {
     }
 
     private void storeProxiesLoop() {
-    	while (!stop || !proxiesStoreQueue.isEmpty()) {
-    		Proxy proxy = null;
-    		try {
-				proxy = proxiesStoreQueue.poll(1, TimeUnit.SECONDS);
-			} catch (InterruptedException e) {
-			}
-    		if (proxy == null) {
-    			continue;
+        while (!stop || !proxiesStoreQueue.isEmpty()) {
+            Proxy proxy = null;
+            try {
+                proxy = proxiesStoreQueue.poll(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+            }
+            if (proxy == null) {
+                continue;
             }
             proxyStore.save(proxy);
-    	}
+        }
     }
 
     private void detectHttpLoop() {
@@ -240,7 +239,7 @@ public class NettyProxyScanner {
                     public void operationComplete(ChannelFuture future) throws Exception {
                         httpConc.release();
                     }
-                    
+
                 });
                 if (!future.isSuccess()) {
                     future.channel().close();
@@ -261,13 +260,13 @@ public class NettyProxyScanner {
         bootstrap.connect(proxy).addListener(new ChannelFutureListener() {
             @Override
             public void operationComplete(ChannelFuture future) throws Exception {
-            	future.channel().closeFuture().addListener(new ChannelFutureListener() {
+                future.channel().closeFuture().addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {
                         httpsConc.release();
                     }
                 });
-            	if (!future.isSuccess()) {
+                if (!future.isSuccess()) {
                     future.channel().close();
                     return;
                 }
@@ -281,14 +280,18 @@ public class NettyProxyScanner {
 
     private class ProxyScannerHandler extends SimpleChannelInboundHandler<HttpObject> {
 
-        private void handleHttpProgress(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
+        private void handleHttpProgress(ChannelHandlerContext ctx, HttpObject msg)
+                throws Exception {
             if (msg instanceof LastHttpContent) {
                 HttpContent content = (HttpContent) msg;
                 if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH) {
                     InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
-                    Proxy proxy = new Proxy(ProxyProtocol.HTTP, address.getHostName(), address.getPort());
-                    proxy.setFoundDate(new Date()).setLastCheckDate(new Date()).setIsValid(Short.valueOf("1"));
-                    System.err.println("HTTP-PROXY:" + address.getHostName() + "," + address.getPort());
+                    Proxy proxy =
+                            new Proxy(ProxyProtocol.HTTP, address.getHostName(), address.getPort());
+                    proxy.setFoundDate(new Date()).setLastCheckDate(new Date())
+                            .setIsValid(Short.valueOf("1"));
+                    System.err.println(
+                            "HTTP-PROXY:" + address.getHostName() + "," + address.getPort());
                     pushToStoreQueue(proxy);
                     pushToHttpsDetectQueue(proxy);
                 }
@@ -309,7 +312,7 @@ public class NettyProxyScanner {
                         @Override
                         public void operationComplete(ChannelFuture future) throws Exception {
                             if (!future.isSuccess()) {
-                            	ctx.close();
+                                ctx.close();
                             }
                         }
                     });
@@ -319,14 +322,18 @@ public class NettyProxyScanner {
             }
         }
 
-        private void handleHttpsProgress(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
+        private void handleHttpsProgress(ChannelHandlerContext ctx, HttpObject msg)
+                throws Exception {
             if (msg instanceof LastHttpContent) {
                 HttpContent content = (HttpContent) msg;
                 if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH) {
                     InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
-                    Proxy proxy = new Proxy(ProxyProtocol.HTTPS, address.getHostName(), address.getPort());
-                    proxy.setFoundDate(new Date()).setLastCheckDate(new Date()).setIsValid(Short.valueOf("1"));
-                    System.err.println("HTTPS-PROXY:" + address.getHostName() + "," + address.getPort());
+                    Proxy proxy = new Proxy(ProxyProtocol.HTTPS, address.getHostName(),
+                            address.getPort());
+                    proxy.setFoundDate(new Date()).setLastCheckDate(new Date())
+                            .setIsValid(Short.valueOf("1"));
+                    System.err.println(
+                            "HTTPS-PROXY:" + address.getHostName() + "," + address.getPort());
                     pushToStoreQueue(proxy);
                 }
             }

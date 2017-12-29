@@ -8,11 +8,11 @@ import java.net.UnknownHostException;
 import com.fd.proxyscan.utils.IPUtils;
 
 public class MultiPortDetectAddressProvider implements DetectAddressProvider {
-    
+
     private byte[] startIp;
     private int[] ports;
     private int portIndex;
-    
+
     public MultiPortDetectAddressProvider(InetAddress startAddress, int[] ports) {
         startIp = startAddress.getAddress();
         this.ports = ports;
@@ -20,9 +20,9 @@ public class MultiPortDetectAddressProvider implements DetectAddressProvider {
     }
 
     private void incIp() {
-    	IPUtils.changeToNextIp(startIp);
+        IPUtils.changeToNextIp(startIp);
     }
-    
+
     @Override
     public SocketAddress next() {
         if (portIndex == ports.length) {
