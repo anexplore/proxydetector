@@ -60,7 +60,6 @@ class Server(object):
             address = '0.0.0.0'
         self.address = address
         self.port = port
-        self.gzip = gzip
         self.http_server = None
 
     def start(self):
