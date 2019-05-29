@@ -196,7 +196,7 @@ public class NettyProxyScanner {
             }
             if (address != null) {
                 count++;
-                if (count % 20000 == 0) {
+                if (count % 100 == 0) {
                     System.out.println(count + "," + address);
                 }
                 try {
@@ -282,7 +282,13 @@ public class NettyProxyScanner {
 
         private void handleHttpProgress(ChannelHandlerContext ctx, HttpObject msg)
                 throws Exception {
-            if (msg instanceof LastHttpContent) {
+        	if (msg instanceof HttpResponse) {
+        		if (((HttpResponse)msg).status().code() != HttpResponseStatus.OK.code()) {
+        			ctx.close();
+        			return;
+        		}
+        	}
+        	if (msg instanceof LastHttpContent) {
                 HttpContent content = (HttpContent) msg;
                 if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH) {
                     InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
@@ -324,7 +330,13 @@ public class NettyProxyScanner {
 
         private void handleHttpsProgress(ChannelHandlerContext ctx, HttpObject msg)
                 throws Exception {
-            if (msg instanceof LastHttpContent) {
+        	if (msg instanceof HttpResponse) {
+        		if (((HttpResponse)msg).status().code() != HttpResponseStatus.OK.code()) {
+        			ctx.close();
+        			return;
+        		}
+        	}
+        	if (msg instanceof LastHttpContent) {
                 HttpContent content = (HttpContent) msg;
                 if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH) {
                     InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
