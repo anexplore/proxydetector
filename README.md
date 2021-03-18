@@ -32,7 +32,7 @@ java -cp proxyscan-2.0-jar-with-dependencies.jar com.fd.proxyscan.NettyProxyScan
 
 参数: 
 * 123.0.0.0 起始IP
-* 80,1080,1081,3128 需要探测的IP
+* 80,1080,1081,3128 需要探测的端口
 * 1000 TCP最大链接数
 
 其它配置:
