@@ -2,7 +2,6 @@ package com.fd.proxyscan;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.UnknownHostException;
 
 import com.fd.proxyscan.utils.IPUtils;
@@ -22,11 +21,11 @@ public class DefaultDetectAddressProvider implements DetectAddressProvider {
     }
 
     @Override
-    public SocketAddress next() {
+    public InetSocketAddress next() {
         incIp();
         try {
             return new InetSocketAddress(InetAddress.getByAddress(startIp), port);
-        } catch (UnknownHostException e) {
+        } catch (UnknownHostException ignore) {
         }
         return null;
     }

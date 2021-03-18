@@ -1,9 +1,7 @@
 package com.fd.proxyscan;
 
-import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -14,89 +12,68 @@ import com.fd.proxyscan.store.ProxyStore;
 import com.fd.proxyscan.store.StdoutProxyStore;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpContentDecompressor;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpObjectAggregator;
-import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.codec.socksx.v4.*;
+import io.netty.handler.codec.socksx.v5.*;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.timeout.ReadTimeoutHandler;
-import io.netty.util.AttributeKey;
 
-@SuppressWarnings("deprecation")
+import io.netty.util.ReferenceCountUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import static com.fd.proxyscan.Constants.*;
+
 public class NettyProxyScanner {
-
+    private static final Logger LOG = LoggerFactory.getLogger(NettyProxyScanner.class);
     private final NettyProxyScanConfig config;
     private final DetectAddressProvider provider;
     private final ProxyStore proxyStore;
-    private Bootstrap bootstrap;
+
+    private Bootstrap httpBootstrap;
+    private Bootstrap socks4Bootstrap;
+    private Bootstrap socks5Bootstrap;
     private SslContext sslCtx;
     private EventLoopGroup eventLoopGroup;
-    private Semaphore httpConc;
-    private Semaphore httpsConc;
-    private volatile boolean stop = false;
-    private volatile boolean stopHttps = false;
-    private Thread httpDetectThread;
-    private Thread httpsDetectThread;
+
+    private Semaphore connSemaphore;
+    private Thread detectThread;
     private Thread proxyStoreThread;
+
+    @Deprecated
     private final LinkedBlockingQueue<Proxy> httpsDetectQueue;
     private final LinkedBlockingQueue<Proxy> proxiesStoreQueue;
-    private static final int EXPECTED_CONTENT_LENGTH = 43;
-    private static final HttpRequest PROXY_HTTP_REQUEST = new DefaultHttpRequest(
-            HttpVersion.HTTP_1_1, HttpMethod.GET, "http://hm.baidu.com/hm.gif");
-    private static final HttpRequest PROXY_HTTPS_CONNECT_REQUEST =
-            new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.CONNECT, "hm.baidu.com:443");
-    private static final HttpRequest PROXY_HTTPS_REQUEST =
-            new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/hm.gif");
-    private static final AttributeKey<DetectProgress> DETECT_PROGRESS =
-            AttributeKey.valueOf("detectProgress");
 
-    private enum DetectProgress {
-        HTTP, CONNECT, HTTPS
-    }
-
-    static {
-        PROXY_HTTP_REQUEST.headers().set(HttpHeaderNames.HOST, "hm.baidu.com");
-        PROXY_HTTPS_CONNECT_REQUEST.headers().set(HttpHeaderNames.HOST, "hm.baidu.com:443");
-        PROXY_HTTPS_CONNECT_REQUEST.headers().set(HttpHeaderNames.PROXY_CONNECTION, "keep-alive");
-        PROXY_HTTPS_REQUEST.headers().set(HttpHeaderNames.HOST, "hm.baidu.com");
-    }
+    private volatile boolean stop;
 
     public static void main(String[] args) throws Exception {
+        String startIp = args[0];
+        int[] ports = Arrays.stream(args[1].split(",")).mapToInt(Integer::parseInt).toArray();
+        int maxConn = Integer.parseInt(args[2]);
+        LOG.info("startip: {}, ports: {}, maxconn: {}", startIp, ports, maxConn);
         MultiPortDetectAddressProvider provider = new MultiPortDetectAddressProvider(
-                InetAddress.getByName(args[0]),
-                Arrays.asList(args[1].split(",")).stream().mapToInt(Integer::parseInt).toArray());
+                InetAddress.getByName(startIp), ports);
         NettyProxyScanConfig config = new NettyProxyScanConfig();
-        config.maxHttpDetectConc = Integer.parseInt(args[2]);
+        config.maxDetectConnections = maxConn;
         NettyProxyScanner scanner = new NettyProxyScanner(config, provider);
         Runtime.getRuntime().addShutdownHook(new Thread() {
             public void run() {
                 try {
                     scanner.close();
-                } catch (IOException e) {
-                } catch (InterruptedException e) {
+                } catch (InterruptedException ignore) {
                 }
             }
         });
@@ -109,46 +86,29 @@ public class NettyProxyScanner {
         this.proxyStore = new StdoutProxyStore();
         this.config = config;
         this.provider = provider;
-        httpConc = new Semaphore(config.maxHttpDetectConc);
-        httpsConc = new Semaphore(config.maxHttpsDetectConc);
+        this.connSemaphore = new Semaphore(config.maxDetectConnections);
     }
 
     private void bootstrap() throws Exception {
-        this.eventLoopGroup = new NioEventLoopGroup(config.eventLoopThreadNumber);
-        bootstrap = new Bootstrap();
-        bootstrap.group(eventLoopGroup).channel(NioSocketChannel.class)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.connectTimeout)
-                .option(ChannelOption.TCP_NODELAY, true).handler(new PipelineIntializer());
-        this.sslCtx = SslContextBuilder.forClient()
-                .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        proxyStoreThread = new Thread() {
-            public void run() {
-                storeProxiesLoop();
-            }
-        };
-        httpDetectThread = new Thread() {
-            public void run() {
-                detectHttpLoop();
-            }
-        };
-        httpsDetectThread = new Thread() {
-            public void run() {
-                detectHttpsLoop();
-            }
-        };
+        eventLoopGroup = new NioEventLoopGroup(config.eventLoopThreadNumber);
+        sslCtx = SslContextBuilder.forClient().trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+        httpBootstrap = newBootstrap().handler(new PipelineInitializer());
+        socks4Bootstrap = newBootstrap().handler(new SocksPipelineInitializer(false));
+        socks5Bootstrap = newBootstrap().handler(new SocksPipelineInitializer(true));
 
-        httpDetectThread.start();
-        httpsDetectThread.start();
+        proxyStoreThread = new Thread(this::storeProxiesLoop);
+        detectThread = new Thread(this::detectProxyLoop);
+
+        detectThread.setName("Detect");
+        proxyStoreThread.setName("Proxy-Store");
+        detectThread.start();
         proxyStoreThread.start();
     }
 
-    public void close() throws IOException, InterruptedException {
+    public void close() throws InterruptedException {
         stop = true;
-        if (httpDetectThread != null) {
-            httpDetectThread.join();
-        }
-        if (httpsDetectThread != null) {
-            httpsDetectThread.join();
+        if (detectThread != null) {
+            detectThread.join();
         }
         if (eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully();
@@ -158,26 +118,60 @@ public class NettyProxyScanner {
         }
     }
 
+    private boolean running() {
+        // more clearly
+        return stop == false;
+    }
+
     private void pushToStoreQueue(Proxy proxy) {
         try {
             proxiesStoreQueue.put(proxy);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ignore) {
         }
     }
 
+    @Deprecated
     private void pushToHttpsDetectQueue(Proxy proxy) {
         try {
             httpsDetectQueue.put(proxy);
-        } catch (InterruptedException e) {
+        } catch (InterruptedException ignore) {
         }
     }
 
+    /**
+     * must call after check content readableBytes length is bigger than six
+     *
+     * @param content HttpContent
+     * @return true if is correct gif image header
+     */
+    private boolean isCorrectGifHeader(HttpContent content) {
+        byte[] header = new byte[6];
+        content.content().readBytes(header);
+        return header[0] == GIF_89A_HEADER[0] && header[1] == GIF_89A_HEADER[1] && header[2] == GIF_89A_HEADER[2]
+                && header[3] == GIF_89A_HEADER[3] && header[4] == GIF_89A_HEADER[4] && header[5] == GIF_89A_HEADER[5];
+    }
+
+    private Bootstrap newBootstrap() {
+        return new Bootstrap()
+                .group(eventLoopGroup)
+                .channel(NioSocketChannel.class)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.connectTimeout)
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_REUSEADDR, true);
+    }
+
+    private Proxy newProxy(ProxyProtocol proxyProtocol, InetSocketAddress address) {
+        Proxy proxy = new Proxy(proxyProtocol, address.getHostName(), address.getPort());
+        proxy.setFoundDate(new Date()).setLastCheckDate(new Date()).setValid(1);
+        return proxy;
+    }
+
     private void storeProxiesLoop() {
-        while (!stop || !proxiesStoreQueue.isEmpty()) {
+        while (running() || proxiesStoreQueue.size() > 0) {
             Proxy proxy = null;
             try {
                 proxy = proxiesStoreQueue.poll(1, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException ignore) {
             }
             if (proxy == null) {
                 continue;
@@ -186,102 +180,80 @@ public class NettyProxyScanner {
         }
     }
 
-    private void detectHttpLoop() {
-        int count = 0;
-        while (!stop) {
-            SocketAddress address = provider.next();
+    private void detectProxyLoop() {
+        long count = 0;
+        while (running()) {
+            InetSocketAddress address = provider.next();
             if (address == null) {
                 stop = true;
                 break;
             }
-            if (address != null) {
-                count++;
-                if (count % 100 == 0) {
-                    System.out.println(count + "," + address);
-                }
-                try {
-                    detectProxy(address);
-                } catch (InterruptedException ignore) {
-                }
-            }
-        }
-        stopHttps = true;
-    }
-
-    private void detectHttpsLoop() {
-        while (!stopHttps || httpsDetectQueue.size() > 0) {
-            Proxy httpProxy;
-            try {
-                httpProxy = httpsDetectQueue.poll(2, TimeUnit.SECONDS);
-            } catch (InterruptedException ignore) {
-                continue;
-            }
-            if (httpProxy == null) {
-                continue;
+            count++;
+            if (count % 100 == 0) {
+                LOG.info("processed {}'th address: {}", count, address);
             }
             try {
-                detectProxys(new InetSocketAddress(httpProxy.getHost(), httpProxy.getPort()));
+                detectProxy(address);
             } catch (InterruptedException ignore) {
             }
         }
+        LOG.info("total detect {} address", count);
     }
 
-    private void detectProxy(SocketAddress proxy) throws InterruptedException {
-        if (proxy == null) {
-            return;
-        }
-        httpConc.acquire();
-        bootstrap.connect(proxy).addListener(new ChannelFutureListener() {
-            @Override
-            public void operationComplete(ChannelFuture future) throws Exception {
-                future.channel().closeFuture().addListener(new ChannelFutureListener() {
-                    @Override
-                    public void operationComplete(ChannelFuture future) throws Exception {
-                        httpConc.release();
-                    }
-
-                });
-                if (!future.isSuccess()) {
-                    future.channel().close();
-                    return;
-                }
-                Channel channel = future.channel();
-                channel.attr(DETECT_PROGRESS).set(DetectProgress.HTTP);
-                channel.writeAndFlush(PROXY_HTTP_REQUEST);
+    private void detectHttpsProxy(InetSocketAddress proxy) {
+        httpBootstrap.connect(proxy).addListener((ChannelFutureListener) future -> {
+            future.channel().closeFuture().addListener((ChannelFutureListener) future1 -> connSemaphore.release());
+            if (!future.isSuccess()) {
+                future.channel().close();
+                return;
             }
+            future.channel().attr(DETECT_PROGRESS).set(DetectProgress.CONNECT);
+            future.channel().writeAndFlush(PROXY_HTTPS_CONNECT_REQUEST);
         });
     }
 
-    private void detectProxys(SocketAddress proxy) throws InterruptedException {
-        if (proxy == null) {
-            return;
-        }
-        httpsConc.acquire();
-        bootstrap.connect(proxy).addListener(new ChannelFutureListener() {
-            @Override
-            public void operationComplete(ChannelFuture future) throws Exception {
-                future.channel().closeFuture().addListener(new ChannelFutureListener() {
-                    @Override
-                    public void operationComplete(ChannelFuture future) throws Exception {
-                        httpsConc.release();
-                    }
-                });
-                if (!future.isSuccess()) {
-                    future.channel().close();
-                    return;
-                }
-                Channel channel = future.channel();
-                channel.attr(DETECT_PROGRESS).set(DetectProgress.CONNECT);
-                channel.writeAndFlush(PROXY_HTTPS_CONNECT_REQUEST);
+    private void detectSocks4Proxy(InetSocketAddress proxy) {
+        socks4Bootstrap.connect(proxy).addListener((ChannelFutureListener) future -> {
+            future.channel().closeFuture().addListener((ChannelFutureListener) future1 -> connSemaphore.release());
+            if (!future.isSuccess()) {
+                future.channel().close();
+                return;
             }
+            future.channel().attr(DETECT_PROGRESS).set(DetectProgress.CONNECT);
+            // this will detect socks4a
+            future.channel().writeAndFlush(new DefaultSocks4CommandRequest(Socks4CommandType.CONNECT,
+                    REQUEST_HOST, REQUEST_PORT));
         });
     }
 
+    private void detectSocks5Proxy(InetSocketAddress proxy) {
+        socks5Bootstrap.connect(proxy).addListener((ChannelFutureListener) future -> {
+            future.channel().closeFuture().addListener((ChannelFutureListener) future1 -> connSemaphore.release());
+            if (!future.isSuccess()) {
+                future.channel().close();
+                return;
+            }
+            future.channel().attr(DETECT_PROGRESS).set(DetectProgress.CONNECT);
+            future.channel().writeAndFlush(SOCKS_5_INITIAL_REQUEST);
+        });
+    }
 
-    private class ProxyScannerHandler extends SimpleChannelInboundHandler<HttpObject> {
+    private void detectProxy(InetSocketAddress proxy) throws InterruptedException {
+        if (proxy == null) {
+            return;
+        }
+        connSemaphore.acquire(1);
+        detectHttpsProxy(proxy);
+        connSemaphore.acquire(1);
+        detectSocks5Proxy(proxy);
+        connSemaphore.acquire(1);
+        detectSocks4Proxy(proxy);
+    }
 
-        private void handleHttpProgress(ChannelHandlerContext ctx, HttpObject msg)
-                throws Exception {
+    private class HttpProxyScannerHandler extends SimpleChannelInboundHandler<HttpObject> {
+
+        @Deprecated
+        private void handleHttpProgress(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
         	if (msg instanceof HttpResponse) {
         		if (((HttpResponse)msg).status().code() != HttpResponseStatus.OK.code()) {
         			ctx.close();
@@ -290,46 +262,34 @@ public class NettyProxyScanner {
         	}
         	if (msg instanceof LastHttpContent) {
                 HttpContent content = (HttpContent) msg;
-                if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH) {
+                if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH && isCorrectGifHeader(content)) {
                     InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
-                    Proxy proxy =
-                            new Proxy(ProxyProtocol.HTTP, address.getHostName(), address.getPort());
-                    proxy.setFoundDate(new Date()).setLastCheckDate(new Date())
-                            .setIsValid(Short.valueOf("1"));
-                    System.err.println(
-                            "HTTP-PROXY:" + address.getHostName() + "," + address.getPort());
+                    Proxy proxy = newProxy(ProxyProtocol.HTTP, address);
+                    LOG.info("find http-proxy: {}:{}", address.getHostName(), address.getPort());
                     pushToStoreQueue(proxy);
                     pushToHttpsDetectQueue(proxy);
                 }
             }
+        	// we use http object aggregator so first http response object is complete, just close connection
             ctx.close();
         }
 
-        private void handleHttpConnectProgress(ChannelHandlerContext ctx, HttpObject msg)
-                throws Exception {
+        private void handleHttpConnectProgress(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
             if (msg instanceof HttpResponse) {
                 HttpResponse response = (HttpResponse) msg;
                 if (response.status().code() == HttpResponseStatus.OK.code()) {
-                    ctx.pipeline().remove("httpcodec");
-                    ctx.pipeline().addAfter("readtimeout", "httpcodec", new HttpClientCodec());
-                    ctx.pipeline().addAfter("readtimeout", "ssl", sslCtx.newHandler(ctx.alloc()));
+                    ctx.pipeline().remove(HTTP_CODEC);
+                    ctx.pipeline().addAfter(READ_TIMEOUT, HTTP_CODEC, new HttpClientCodec());
+                    ctx.pipeline().addAfter(READ_TIMEOUT, SSL, sslCtx.newHandler(ctx.alloc()));
                     ctx.channel().attr(DETECT_PROGRESS).set(DetectProgress.HTTPS);
-                    ctx.writeAndFlush(PROXY_HTTPS_REQUEST).addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            if (!future.isSuccess()) {
-                                ctx.close();
-                            }
-                        }
-                    });
+                    ctx.writeAndFlush(PROXY_HTTPS_REQUEST).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
                 } else {
                     ctx.close();
                 }
             }
         }
 
-        private void handleHttpsProgress(ChannelHandlerContext ctx, HttpObject msg)
-                throws Exception {
+        private void handleHttpsProgress(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
         	if (msg instanceof HttpResponse) {
         		if (((HttpResponse)msg).status().code() != HttpResponseStatus.OK.code()) {
         			ctx.close();
@@ -338,14 +298,10 @@ public class NettyProxyScanner {
         	}
         	if (msg instanceof LastHttpContent) {
                 HttpContent content = (HttpContent) msg;
-                if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH) {
+                if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH && isCorrectGifHeader(content)) {
                     InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
-                    Proxy proxy = new Proxy(ProxyProtocol.HTTPS, address.getHostName(),
-                            address.getPort());
-                    proxy.setFoundDate(new Date()).setLastCheckDate(new Date())
-                            .setIsValid(Short.valueOf("1"));
-                    System.err.println(
-                            "HTTPS-PROXY:" + address.getHostName() + "," + address.getPort());
+                    Proxy proxy = newProxy(ProxyProtocol.HTTPS, address);
+                    LOG.info("find https-proxy: {}:{}", address.getHostName(), address.getPort());
                     pushToStoreQueue(proxy);
                 }
             }
@@ -358,6 +314,7 @@ public class NettyProxyScanner {
             DetectProgress progress = channel.attr(DETECT_PROGRESS).get();
             switch (progress) {
                 case HTTP:
+                    // disabled
                     handleHttpProgress(ctx, msg);
                     break;
                 case CONNECT:
@@ -375,18 +332,170 @@ public class NettyProxyScanner {
         }
     }
 
-    private class PipelineIntializer extends ChannelInitializer<SocketChannel> {
+    private class Socks5ProxyScannerHandler extends SimpleChannelInboundHandler<Object> {
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+            DetectProgress progress = ctx.channel().attr(DETECT_PROGRESS).get();
+            // socks connect
+            if (progress == DetectProgress.CONNECT) {
+                if (msg instanceof Socks5InitialResponse) {
+                    Socks5InitialResponse initialResponse = (Socks5InitialResponse) msg;
+                    if (initialResponse.authMethod().equals(Socks5AuthMethod.NO_AUTH)) {
+                        // Connect Request
+                        ctx.pipeline().replace(DECODER, DECODER, new Socks5CommandResponseDecoder());
+                        ctx.writeAndFlush(new DefaultSocks5CommandRequest(
+                                Socks5CommandType.CONNECT,
+                                Socks5AddressType.DOMAIN,
+                                REQUEST_HOST,
+                                REQUEST_PORT
+                        )).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+                    } else {
+                        // drop
+                        ctx.close();
+                    }
+                } else if (msg instanceof Socks5CommandResponse) {
+                    Socks5CommandResponse commandResponse = (Socks5CommandResponse) msg;
+                    if (commandResponse.status().equals(Socks5CommandStatus.SUCCESS)) {
+                        ctx.channel().attr(DETECT_PROGRESS).set(DetectProgress.HTTP);
+                        // Send Http Request
+                        ctx.pipeline().addAfter(READ_TIMEOUT, SSL, sslCtx.newHandler(ctx.alloc()));
+                        ctx.pipeline().replace(ENCODER, ENCODER, new HttpClientCodec());
+                        ctx.pipeline().replace(DECODER, DECOMPRESSED, new HttpContentDecompressor());
+                        ctx.pipeline().addAfter(DECOMPRESSED, AGGREGATION, new HttpObjectAggregator(MAX_HTTP_AGGREGATION_LENGTH));
+                        ctx.writeAndFlush(PROXY_HTTPS_REQUEST).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+                    } else {
+                        ctx.close();
+                    }
+                } else {
+                    ctx.close();
+                }
+            } else {
+                // http test
+                // both check status code and content length; and gif header
+                if (msg instanceof HttpResponse) {
+                    if (((HttpResponse)msg).status().code() != HttpResponseStatus.OK.code()) {
+                        ctx.close();
+                        return;
+                    }
+                }
+                if (msg instanceof LastHttpContent) {
+                    HttpContent content = (HttpContent) msg;
+                    if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH && isCorrectGifHeader(content)) {
+                        InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
+                        // getHostName() will trigger reverse ip to hostname
+                        Proxy proxy = newProxy(ProxyProtocol.SOCKS5, address);
+                        LOG.info("find socks5-proxy: {}:{}", address.getHostName(), address.getPort());
+                        pushToStoreQueue(proxy);
+                        pushToHttpsDetectQueue(proxy);
+                    }
+                }
+                ctx.close();
+            }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            ctx.close();
+        }
+    }
+
+    private class Socks4ProxyScannerHandler extends SimpleChannelInboundHandler<Object> {
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+            DetectProgress progress = ctx.channel().attr(DETECT_PROGRESS).get();
+            if (progress == DetectProgress.CONNECT) {
+                if (msg instanceof Socks4CommandResponse) {
+                    Socks4CommandResponse commandResponse = (Socks4CommandResponse) msg;
+                    if (commandResponse.status().equals(Socks4CommandStatus.SUCCESS)) {
+                        ctx.channel().attr(DETECT_PROGRESS).set(DetectProgress.HTTP);
+                        // Send Http Request
+                        ctx.pipeline().addAfter(READ_TIMEOUT, SSL, sslCtx.newHandler(ctx.alloc()));
+                        ctx.pipeline().replace(ENCODER, ENCODER, new HttpClientCodec());
+                        ctx.pipeline().replace(DECODER, DECOMPRESSED, new HttpContentDecompressor());
+                        ctx.pipeline().addAfter(DECOMPRESSED, AGGREGATION, new HttpObjectAggregator(MAX_HTTP_AGGREGATION_LENGTH));
+                        ctx.writeAndFlush(PROXY_HTTPS_REQUEST).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+                    } else {
+                        ctx.close();
+                    }
+                }
+            } else {
+                // http test
+                // both check status code and content length; and gif header
+                if (msg instanceof HttpResponse) {
+                    if (((HttpResponse)msg).status().code() != HttpResponseStatus.OK.code()) {
+                        ctx.close();
+                        return;
+                    }
+                }
+                if (msg instanceof LastHttpContent) {
+                    HttpContent content = (HttpContent) msg;
+                    if (content.content().readableBytes() == EXPECTED_CONTENT_LENGTH && isCorrectGifHeader(content)) {
+                        InetSocketAddress address = (InetSocketAddress) ctx.channel().remoteAddress();
+                        // getHostName() will trigger reverse ip to hostname
+                        Proxy proxy = newProxy(ProxyProtocol.SOCKS4A, address);
+                        LOG.info("find socks4a-proxy: {}:{}", address.getHostName(), address.getPort());
+                        pushToStoreQueue(proxy);
+                        pushToHttpsDetectQueue(proxy);
+                    }
+                }
+                ctx.close();
+            }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            ctx.close();
+        }
+    }
+
+    private class PipelineInitializer extends ChannelInitializer<SocketChannel> {
 
         @Override
         protected void initChannel(SocketChannel sc) throws Exception {
-            ChannelPipeline p = sc.pipeline();
-            p.addLast("readtimeout", new ReadTimeoutHandler(
-                    (int) TimeUnit.MILLISECONDS.toSeconds(config.readTimeout)));
-            p.addLast("httpcodec", new HttpClientCodec());
-            p.addLast("decompress", new HttpContentDecompressor());
-            p.addLast("aggre", new HttpObjectAggregator(1024 * 1024));
-            p.addLast("proxyhandler", new ProxyScannerHandler());
+            ChannelPipeline pipeline = sc.pipeline();
+            pipeline.addLast(READ_TIMEOUT, new ReadTimeoutHandler((int) TimeUnit.MILLISECONDS.toSeconds(config.readTimeout)));
+            pipeline.addLast(HTTP_CODEC, new HttpClientCodec());
+            pipeline.addLast(DECOMPRESSED, new HttpContentDecompressor());
+            // target image size is 43, 128K is bigger enough
+            pipeline.addLast(AGGREGATION, new HttpObjectAggregator(MAX_HTTP_AGGREGATION_LENGTH));
+            pipeline.addLast(PROXY_HANDLER, new HttpProxyScannerHandler());
+            // add handler to process not accept message and release reference
+            pipeline.addLast(new ChannelInboundHandlerAdapter() {
+                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                    ReferenceCountUtil.release(msg);
+                }
+            });
+        }
+    }
+
+    private class SocksPipelineInitializer extends ChannelInitializer<SocketChannel> {
+
+        public final boolean socks5;
+
+        public SocksPipelineInitializer(boolean socks5) {
+            this.socks5 = socks5;
         }
 
+        @Override
+        protected void initChannel(SocketChannel socketChannel) throws Exception {
+            ChannelPipeline pipeline = socketChannel.pipeline();
+            pipeline.addLast(READ_TIMEOUT, new ReadTimeoutHandler((int)TimeUnit.MICROSECONDS.toSeconds(config.readTimeout)));
+            if (socks5) {
+                pipeline.addLast(ENCODER, Socks5ClientEncoder.DEFAULT);
+                pipeline.addLast(DECODER, new Socks5InitialResponseDecoder());
+                pipeline.addLast(PROXY_HANDLER, new Socks5ProxyScannerHandler());
+            } else {
+                pipeline.addLast(ENCODER, Socks4ClientEncoder.INSTANCE);
+                pipeline.addLast(DECODER, new Socks4ClientDecoder());
+                pipeline.addLast(PROXY_HANDLER, new Socks4ProxyScannerHandler());
+            }
+            pipeline.addLast(new ChannelInboundHandlerAdapter() {
+                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                    ReferenceCountUtil.release(msg);
+                }
+            });
+        }
     }
 }

@@ -7,7 +7,6 @@ public class NettyProxyScanConfig {
     public int readTimeout = 2000;
     /* set to zero to use default cpu core number */
     public int eventLoopThreadNumber = 0;
-
-    public int maxHttpDetectConc = 30000;
-    public int maxHttpsDetectConc = 20;
+    /*max connections, this can control bandwidth*/
+    public int maxDetectConnections = 30000;
 }

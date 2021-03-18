@@ -4,9 +4,9 @@ import com.fd.proxyscan.Proxy;
 
 public interface ProxyStore {
 	/**
-	 * 存储Proxy
-	 * @param proxy 代理
-	 * @return 保存成功true 否则 false
+	 * save proxy
+	 * @param proxy proxy
+	 * @return true if success else false
 	 */
 	boolean save(Proxy proxy);
 }

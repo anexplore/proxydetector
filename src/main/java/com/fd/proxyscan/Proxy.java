@@ -7,10 +7,11 @@ public class Proxy {
     private String host;
     private int port;
     private double speed = 0.0;
-    private short beyondGfw;
+    // over great wall
+    private int beyondGfw;
     private Date foundDate;
     private Date lastCheckDate;
-    private short isValid = 1;
+    private int valid = 1;
     private String level;
     private String district;
     private String country;
@@ -24,138 +25,149 @@ public class Proxy {
         this.port = port;
     }
 
-    @Override
-    public String toString() {
-        return "Proxy [protocol=" + protocol + ", host=" + host + ", port=" + port + ", speed="
-                + speed + ", beyondGfw=" + beyondGfw + ", foundDate=" + foundDate
-                + ", lastCheckDate=" + lastCheckDate + ", isValid=" + isValid + ", level=" + level
-                + ", district=" + district + ", country=" + country + ", province=" + province
-                + ", city=" + city + ", carrier=" + carrier + "]";
-    }
-
-    public synchronized ProxyProtocol getProtocol() {
+    public ProxyProtocol getProtocol() {
         return protocol;
     }
 
-    public synchronized Proxy setProtocol(ProxyProtocol protocol) {
+    public Proxy setProtocol(ProxyProtocol protocol) {
         this.protocol = protocol;
         return this;
     }
 
-    public synchronized String getHost() {
+    public String getHost() {
         return host;
     }
 
-    public synchronized Proxy setHost(String host) {
+    public Proxy setHost(String host) {
         this.host = host;
         return this;
     }
 
-    public synchronized int getPort() {
+    public int getPort() {
         return port;
     }
 
-    public synchronized Proxy setPort(int port) {
+    public Proxy setPort(int port) {
         this.port = port;
         return this;
     }
 
-    public synchronized double getSpeed() {
+    public double getSpeed() {
         return speed;
     }
 
-    public synchronized Proxy setSpeed(double speed) {
+    public Proxy setSpeed(double speed) {
         this.speed = speed;
         return this;
     }
 
-    public synchronized short getBeyondGfw() {
+    public int getBeyondGfw() {
         return beyondGfw;
     }
 
-    public synchronized Proxy setBeyondGfw(short beyondGfw) {
+    public Proxy setBeyondGfw(int beyondGfw) {
         this.beyondGfw = beyondGfw;
         return this;
     }
 
-    public synchronized Date getFoundDate() {
+    public Date getFoundDate() {
         return foundDate;
     }
 
-    public synchronized Proxy setFoundDate(Date foundDate) {
+    public Proxy setFoundDate(Date foundDate) {
         this.foundDate = foundDate;
         return this;
     }
 
-    public synchronized Date getLastCheckDate() {
+    public Date getLastCheckDate() {
         return lastCheckDate;
     }
 
-    public synchronized Proxy setLastCheckDate(Date lastCheckDate) {
+    public Proxy setLastCheckDate(Date lastCheckDate) {
         this.lastCheckDate = lastCheckDate;
         return this;
     }
 
-    public synchronized short getIsValid() {
-        return isValid;
+    public int getValid() {
+        return valid;
     }
 
-    public synchronized Proxy setIsValid(short isValid) {
-        this.isValid = isValid;
+    public Proxy setValid(int valid) {
+        this.valid = valid;
         return this;
     }
 
-    public synchronized String getLevel() {
+    public String getLevel() {
         return level;
     }
 
-    public synchronized Proxy setLevel(String level) {
+    public Proxy setLevel(String level) {
         this.level = level;
         return this;
     }
 
-    public synchronized String getDistrict() {
+    public String getDistrict() {
         return district;
     }
 
-    public synchronized Proxy setDistrict(String district) {
+    public Proxy setDistrict(String district) {
         this.district = district;
         return this;
     }
 
-    public synchronized String getCountry() {
+    public String getCountry() {
         return country;
     }
 
-    public synchronized Proxy setCountry(String country) {
+    public Proxy setCountry(String country) {
         this.country = country;
         return this;
     }
 
-    public synchronized String getProvince() {
+    public String getProvince() {
         return province;
     }
 
-    public synchronized Proxy setProvince(String province) {
+    public Proxy setProvince(String province) {
         this.province = province;
         return this;
     }
 
-    public synchronized String getCity() {
+    public String getCity() {
         return city;
     }
 
-    public synchronized Proxy setCity(String city) {
+    public Proxy setCity(String city) {
         this.city = city;
         return this;
     }
 
-    public synchronized String getCarrier() {
+    public String getCarrier() {
         return carrier;
     }
 
-    public synchronized Proxy setCarrier(String carrier) {
+    public Proxy setCarrier(String carrier) {
         this.carrier = carrier;
         return this;
+    }
+
+    @Override
+    public String toString() {
+        return "Proxy{" +
+                "protocol=" + protocol +
+                ", host='" + host + '\'' +
+                ", port=" + port +
+                ", speed=" + speed +
+                ", beyondGfw=" + beyondGfw +
+                ", foundDate=" + foundDate +
+                ", lastCheckDate=" + lastCheckDate +
+                ", valid=" + valid +
+                ", level='" + level + '\'' +
+                ", district='" + district + '\'' +
+                ", country='" + country + '\'' +
+                ", province='" + province + '\'' +
+                ", city='" + city + '\'' +
+                ", carrier='" + carrier + '\'' +
+                '}';
     }
 }

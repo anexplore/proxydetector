@@ -5,7 +5,7 @@
 
   <groupId>com.fd</groupId>
   <artifactId>proxyscan</artifactId>
-  <version>1.0</version>
+  <version>2.0</version>
   <packaging>jar</packaging>
 
   <name>proxyscan</name>
@@ -16,6 +16,8 @@
     <netty.version>4.1.42.Final</netty.version>
     <assembly.version>3.1.0</assembly.version>
     <compiler.version>3.5.1</compiler.version>
+    <slf4j.version>1.7.30</slf4j.version>
+    <logback.version>1.2.3</logback.version>
   </properties>
 
   <dependencies>
@@ -30,6 +32,17 @@
       <groupId>io.netty</groupId>
       <artifactId>netty-all</artifactId>
       <version>${netty.version}</version>
+    </dependency>
+    <!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-api -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${logback.version}</version>
     </dependency>
   </dependencies>
   <build>

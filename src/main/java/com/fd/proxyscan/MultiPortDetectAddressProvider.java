@@ -2,7 +2,6 @@ package com.fd.proxyscan;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.net.UnknownHostException;
 
 import com.fd.proxyscan.utils.IPUtils;
@@ -24,14 +23,14 @@ public class MultiPortDetectAddressProvider implements DetectAddressProvider {
     }
 
     @Override
-    public SocketAddress next() {
+    public InetSocketAddress next() {
         if (portIndex == ports.length) {
             portIndex = 0;
             incIp();
         }
         try {
             return new InetSocketAddress(InetAddress.getByAddress(startIp), ports[portIndex++]);
-        } catch (UnknownHostException e) {
+        } catch (UnknownHostException ignore) {
         }
         return null;
     }
