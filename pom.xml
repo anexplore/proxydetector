@@ -17,7 +17,7 @@
     <assembly.version>3.1.0</assembly.version>
     <compiler.version>3.5.1</compiler.version>
     <slf4j.version>1.7.30</slf4j.version>
-    <logback.version>1.2.3</logback.version>
+    <logback.version>1.2.13</logback.version>
   </properties>
 
   <dependencies>
